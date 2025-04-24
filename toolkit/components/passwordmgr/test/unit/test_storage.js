@@ -9,6 +9,10 @@
 
 "use strict";
 
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
 // Globals
 
 async function reloadAndCheckLoginsGen(aExpectedLogins) {
@@ -90,4 +94,20 @@ add_task(async function test_storage_addLogin_parentheses() {
   ];
   await Services.logins.addLogins(loginList);
   await reloadAndCheckLoginsGen(loginList);
+});
+
+add_task(async function test_compute_sha256_hex_digest() {
+  const storageUpdatePromise = TestUtils.topicObserved(
+    "password-storage-updated"
+  );
+  LoginTestUtils.clearData();
+  await storageUpdatePromise;
+  const sha256sum = await Services.logins.computeSha256();
+
+  // Empty JSON store has content
+  // {"nextId":14,"logins":[],"potentiallyVulnerablePasswords":[],"dismissedBreachAlertsByLoginGUID":{},"version":3}
+  Assert.equal(
+    sha256sum,
+    "13d9a8e2d3ba2dce1fa73e976506e049743a0b66d125655efb999c332add920a"
+  );
 });

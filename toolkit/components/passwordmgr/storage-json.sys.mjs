@@ -667,7 +667,33 @@ export class LoginManagerStorage_json {
       ) {
         remainingLogins.push(login);
       } else {
-        removedLogins.push(login);
+        // Create the nsLoginInfo object which to emit
+        const loginInfo = Cc[
+          "@mozilla.org/login-manager/loginInfo;1"
+        ].createInstance(Ci.nsILoginInfo);
+        loginInfo.init(
+          login.hostname,
+          login.formSubmitURL,
+          login.httpRealm,
+          login.encryptedUsername,
+          login.encryptedPassword,
+          login.usernameField,
+          login.passwordField
+        );
+        // set nsILoginMetaInfo values
+        loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
+        loginInfo.guid = login.guid;
+        loginInfo.timeCreated = login.timeCreated;
+        loginInfo.timeLastUsed = login.timeLastUsed;
+        loginInfo.timePasswordChanged = login.timePasswordChanged;
+        loginInfo.timesUsed = login.timesUsed;
+        loginInfo.syncCounter = login.syncCounter;
+        loginInfo.everSynced = login.everSynced;
+
+        // Any unknown fields along for the ride
+        loginInfo.unknownFields = login.encryptedUnknownFields;
+
+        removedLogins.push(loginInfo);
         if (!fullyRemove && login?.everSynced) {
           // The login has been synced, so mark it as deleted.
           this.#incrementSyncCounter(login);
@@ -1071,6 +1097,25 @@ export class LoginManagerStorage_json {
     }
 
     return result;
+  }
+
+  /*
+   * Compute a sha256 sum over the json file, as HEX digest. Returns null
+   * if the JSON file does not exist yet. Used for rolling migration.
+   */
+  async computeSha256() {
+    let sha256 = null;
+
+    try {
+      sha256 = await IOUtils.computeHexDigest(this._store.path, "sha256");
+    } catch (e) {
+      // I'd expect this to be a NS_ERROR_FILE_NOT_FOUND, but computeHexDigest
+      // returns NS_ERROR_DOM_NOT_FOUND_ERR instead
+      if (e.result != Cr.NS_ERROR_DOM_NOT_FOUND_ERR) {
+        throw e;
+      }
+    }
+    return sha256;
   }
 }
 

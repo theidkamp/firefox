@@ -499,4 +499,12 @@ LoginManager.prototype = {
       origin
     );
   },
+
+  /*
+   * Compute a sha256 sum over the json file, as HEX digest. Returns null
+   * if the JSON file does not exist yet. Used for rolling migration.
+   */
+  computeSha256() {
+    return this._storage.computeSha256();
+  },
 }; // end of LoginManager implementation
