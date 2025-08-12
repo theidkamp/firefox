@@ -17,10 +17,13 @@ const { sinon } = ChromeUtils.importESModule(
 ("use strict");
 
 /**
- * Enable Rust mirror
+ * Enable Rust mirror and setup Glean
  */
 add_setup(async () => {
   Services.prefs.setBoolPref("signon.loginsRustMirror.enabled", true);
+  // Required for FOG/Glean to work correctly in tests
+  do_get_profile();
+  Services.fog.initializeFOG();
 });
 
 /**
@@ -403,6 +406,7 @@ add_task(async function test_logins_diff_count_rust_storage() {
     "Rust and JSON storage should have the same number of saved passwords"
   );
 
+  mirror.disable();
   await LoginTestUtils.clearData();
   rustStorage.removeAllLogins();
 });

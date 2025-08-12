@@ -136,12 +136,10 @@ class RustLoginsStoreAdapter {
 
     // on continuous mode, return result objects, which could be either a login or an error
     if (continueOnDuplicates) {
-      return results
-        .filter(l => l instanceof BulkResultEntry.Success)
-        .map(({ login, message }) => ({
-          login: loginToLoginInfo(login),
-          error: { message },
-        }));
+      return results.map(({ login, message }) => ({
+        login: loginToLoginInfo(login),
+        error: { message },
+      }));
     }
 
     // otherwise throw first error
