@@ -838,6 +838,92 @@ pwmgr:
     no_lint:
       - UNIT_IN_NAME
 
+  diff_saved_passwords_rust:
+    type: quantity
+    unit: passwords
+    lifetime: application
+    description: |
+      Records any difference in the number of saved logins between JSON
+      storage and Rust storage.
+    bugs:
+      - https://bugzil.la/1981810
+    data_reviews:
+      - https://bugzil.la/1981810
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+
+  rust_migration_failure:
+    type: event
+    description: >
+      Records failures from operations in the Rust password store, including
+      the operation type and error message.
+    bugs:
+      - https://bugzil.la/1981812
+    data_reviews:
+      - https://bugzil.la/1981812
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      operation:
+        description: >
+          The type of operation that failed (e.g. "add", "modify", "remove", "rolling-migration", etc.).
+        type: string
+      error_message:
+        description: >
+          The error message or exception string from the failure.
+        type: string
+
+  rust_incompatible_login_format:
+    type: labeled_counter
+    lifetime: application
+    description: |
+      Counts how often logins contain non-ASCII characters in the `origin` or
+      `formActionOrigin` are automatically converted
+      to Punycode for rust store. Labels distinguish which field was affected.
+    labels:
+    - dotOrigin
+    - nonAsciiOrigin
+    - nonAsciiFormAction
+    bugs:
+      - https://bugzil.la/1981814
+    data_reviews:
+      - https://bugzil.la/1981814
+    data_sensitivity:
+      - stored_content
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+
+  rust_migration_performance:
+    type: event
+    description: >
+      One record per rolling migration run, recording duration and total number
+      of logins migrated.
+    bugs:
+      - https://bugzil.la/1985800
+    data_reviews:
+      - https://bugzil.la/1985800
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      total_logins:
+        description: >
+          Total number of logins migrated during this run.
+        type: string
+      duration_ms:
+        description: >
+          Duration of the migration in milliseconds.
+        type: string
+
   saving_enabled:
     type: boolean
     lifetime: application

@@ -19,10 +19,13 @@ const { setTimeout } = ChromeUtils.importESModule(
 );
 
 /**
- * Enable Rust mirror
+ * Enable Rust mirror and setup Glean
  */
 add_setup(() => {
   Services.prefs.setBoolPref("signon.rustMirror.enabled", true);
+  // Required for FOG/Glean to work correctly in tests
+  do_get_profile();
+  Services.fog.initializeFOG();
 });
 
 /**
@@ -282,4 +285,216 @@ add_task(async function test_migration_time_under_threshold() {
 
   LoginTestUtils.clearData();
   rustStorage.removeAllLogins();
+});
+
+/*
+ * Tests that the number of saved logins is appropriately reported to
+ * the rust storage.
+ */
+add_task(async function test_logins_diff_count_rust_storage() {
+  Services.fog.testResetFOG();
+
+  // Add login to JSON store
+  const login = TestData.formLogin({ username: "glean_user" });
+  await Services.logins.addLoginAsync(login);
+
+  // wait a little for glean
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  Assert.equal(
+    Glean.pwmgr.diffSavedPasswordsRust.testGetValue(),
+    0,
+    "Rust and JSON storage should have the same number of saved passwords"
+  );
+
+  LoginTestUtils.clearData();
+});
+
+/*
+ * Tests that an error is logged when adding an invalid login to the Rust store.
+ * The Rust store is stricter than the JSON store and rejects some formats,
+ * such as single-dot origins.
+ */
+add_task(async function test_rust_mirror_addLogin_failure() {
+  Services.fog.testResetFOG();
+  // This login will be accepted by JSON but rejected by Rust
+  const badLogin = TestData.formLogin({ origin: ".", passwordField: "." });
+
+  await Services.logins.addLoginAsync(badLogin);
+  const allLoginsJson = await Services.logins.getAllLogins();
+  Assert.equal(
+    allLoginsJson.length,
+    1,
+    "single dot origin login saved to JSON"
+  );
+
+  // wait a little for glean
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const rustStorage = new LoginManagerRustStorage();
+
+  const allLogins = await rustStorage.getAllLogins();
+  Assert.equal(
+    allLogins.length,
+    0,
+    "single dot origin login not saved to Rust"
+  );
+
+  const [evt] = Glean.pwmgr.rustMigrationFailure.testGetValue();
+  Assert.ok(evt, "event has been emitted");
+  Assert.equal(evt.extra?.operation, "add", "event has operation");
+  Assert.equal(
+    evt.extra?.error_message,
+    "Invalid login: Login has illegal origin",
+    "event has error_message"
+  );
+  Assert.equal(evt.name, "rust_migration_failure", "event has name");
+
+  LoginTestUtils.clearData();
+});
+
+/*
+ * Tests that we collect telemetry if non-ASCII origins get punycoded.
+ */
+add_task(async function test_punycode_origin_metric() {
+  Services.fog.testResetFOG();
+
+  const punicodeOrigin = "https://münich.example.com";
+  const login = LoginTestUtils.testData.formLogin({
+    origin: punicodeOrigin,
+    formActionOrigin: "https://example.com",
+    username: "user1",
+    password: "pass1",
+  });
+
+  await Services.logins.addLoginAsync(login);
+
+  // wait a little for glean
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const rustStorage = new LoginManagerRustStorage();
+
+  const allLogins = await rustStorage.getAllLogins();
+  Assert.equal(allLogins.length, 1, "punicode origin login saved to Rust");
+  const [rustLogin] = allLogins;
+  Assert.equal(
+    rustLogin.origin,
+    "https://xn--mnich-kva.example.com",
+    "origin has been punicoded on the Rust side"
+  );
+
+  const evt =
+    Glean.pwmgr.rustIncompatibleLoginFormat.nonAsciiOrigin.testGetValue();
+  Assert.equal(evt, 1, "event has been emitted");
+
+  LoginTestUtils.clearData();
+  rustStorage.removeAllLogins();
+});
+
+/*
+ * Tests that we collect telemetry if non-ASCII formorigins get punycoded.
+ */
+add_task(async function test_punycode_formActionOrigin_metric() {
+  Services.fog.testResetFOG();
+
+  const punicodeOrigin = "https://münich.example.com";
+  const login = LoginTestUtils.testData.formLogin({
+    formActionOrigin: punicodeOrigin,
+    origin: "https://example.com",
+    username: "user1",
+    password: "pass1",
+  });
+
+  await Services.logins.addLoginAsync(login);
+
+  // wait a little for glean
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const rustStorage = new LoginManagerRustStorage();
+
+  const allLogins = await rustStorage.getAllLogins();
+  Assert.equal(allLogins.length, 1, "punicode origin login saved to Rust");
+  const [rustLogin] = allLogins;
+  Assert.equal(
+    rustLogin.formActionOrigin,
+    "https://xn--mnich-kva.example.com",
+    "origin has been punicoded on the Rust side"
+  );
+
+  const evt =
+    Glean.pwmgr.rustIncompatibleLoginFormat.nonAsciiFormAction.testGetValue();
+  Assert.equal(evt, 1, "event has been emitted");
+
+  LoginTestUtils.clearData();
+  rustStorage.removeAllLogins();
+});
+
+/*
+ * Tests that we collect telemetry for single dot in origin
+ */
+add_task(async function test_single_dot_in_origin() {
+  Services.fog.testResetFOG();
+
+  const badOrigin = ".";
+  const login = LoginTestUtils.testData.formLogin({
+    origin: badOrigin,
+    formActionOrigin: "https://example.com",
+    username: "user1",
+    password: "pass1",
+  });
+
+  await Services.logins.addLoginAsync(login);
+
+  // wait a little for glean
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const evt = Glean.pwmgr.rustIncompatibleLoginFormat.dotOrigin.testGetValue();
+  Assert.equal(evt, 1, "event has been emitted");
+
+  LoginTestUtils.clearData();
+});
+
+/**
+ * Tests that a rust_migration_performance event is recorded after migration,
+ * containing both duration and total number of migrated logins.
+ */
+add_task(async function test_migration_performance_probe() {
+  Services.fog.testResetFOG();
+
+  const login = TestData.formLogin({
+    username: "perf-user",
+    password: "perf-password",
+  });
+  await Services.logins.addLoginAsync(login);
+
+  // trigger migration
+  Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
+
+  await TestUtils.waitForCondition(() => {
+    return !Services.prefs.getBoolPref(
+      "signon.rustMirror.migrationNeeded",
+      false
+    );
+  }, "'signon.rustMirror.migrationNeeded' pref has been reset by migration");
+
+  const [evt] = Glean.pwmgr.rustMigrationPerformance.testGetValue();
+  Assert.ok(evt, "rustMigrationPerformance event should have been emitted");
+  Assert.equal(
+    evt.extra?.total_logins,
+    "1",
+    "event should record total migrated logins"
+  );
+  Assert.greaterOrEqual(
+    parseInt(evt.extra?.duration_ms, 10),
+    0,
+    "event should record non-negative duration in ms"
+  );
+
+  sinon.restore();
+  LoginTestUtils.clearData();
 });
