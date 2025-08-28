@@ -219,46 +219,48 @@ add_task(async function test_avoid_redundant_updates() {
  *  - still migrates valid logins,
  *  - and sets the checkpoint at the end.
  */
-// add_task(async function test_migration_partial_failure_sets_checkpoint() {
-//   const login_ok = TestData.formLogin({
-//     username: "test-user-ok",
-//     password: "secure-password",
-//   });
-//   await Services.logins.addLoginAsync(login_ok);
-//   const login_bad = TestData.formLogin({
-//     username: "test-user-bad",
-//     password: "secure-password",
-//   });
-//   await Services.logins.addLoginAsync(login_bad);
-//
-//   const rustStorage = new LoginManagerRustStorage();
-//   await rustStorage.initialize();
-//   const mirror = new LoginManagerRustMirror(Services.logins, rustStorage);
-//
-//   sinon.stub(rustStorage, "getCheckpoint").returns("force-migration");
-//   const setCpSpy = sinon.spy(rustStorage, "setCheckpoint");
-//
-//   // Save the first (valid) login into Rust for real, then simulate results
-//   sinon.stub(rustStorage, "addLoginsAsync").callsFake(async (logins, _cont) => {
-//     await rustStorage.addWithMeta(logins[0]);
-//     return [
-//       { login: {}, error: null }, // row 0 success
-//       { login: null, error: { message: "row failed" } }, // row 1 failure
-//     ];
-//   });
-//
-//   try {
-//     await mirror.enable();
-//     const rustLogins = await rustStorage.getAllLogins();
-//     Assert.equal(rustLogins.length, 1, "only valid login migrated");
-//     Assert.ok(setCpSpy.calledOnce, "checkpoint was set");
-//   } finally {
-//     mirror.disable();
-//     sinon.restore();
-//     await LoginTestUtils.clearData();
-//     rustStorage.removeAllLogins();
-//   }
-// });
+
+add_task(async function test_migration_partial_failure_sets_checkpoint() {
+  const login_ok = TestData.formLogin({
+    username: "test-user-ok",
+    password: "secure-password",
+  });
+  await Services.logins.addLoginAsync(login_ok);
+  const login_bad = TestData.formLogin({
+    username: "test-user-bad",
+    password: "secure-password",
+  });
+  await Services.logins.addLoginAsync(login_bad);
+
+  const rustStorage = new LoginManagerRustStorage();
+  await rustStorage.initialize();
+  const mirror = new LoginManagerRustMirror(Services.logins, rustStorage);
+
+  sinon.stub(rustStorage, "getCheckpoint").returns("force-migration");
+  const setCpSpy = sinon.spy(rustStorage, "setCheckpoint");
+
+  // Save the first (valid) login into Rust for real, then simulate results
+  sinon.stub(rustStorage, "addLoginsAsync").callsFake(async (logins, _cont) => {
+    await rustStorage.addWithMeta(logins[0]);
+    return [
+      { login: {}, error: null }, // row 0 success
+      { login: null, error: { message: "row failed" } }, // row 1 failure
+    ];
+  });
+
+  try {
+    await mirror.enable();
+    await mirror.maybeRunRollingMigrationToRustStorage();
+
+    const rustLogins = await rustStorage.getAllLogins();
+    Assert.equal(rustLogins.length, 1, "only valid login migrated");
+    Assert.ok(setCpSpy.calledOnce, "checkpoint was set");
+  } finally {
+    sinon.restore();
+    await LoginTestUtils.clearData();
+    rustStorage.removeAllLogins();
+  }
+});
 
 /**
  * Verify that when the bulk add operation rejects (hard failure),
