@@ -11,6 +11,10 @@ MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
 
+PERFTESTS_MANIFESTS += [
+   "test/unit/perftest.toml",
+]
+
 TESTING_JS_MODULES += [
     "test/LoginTestUtils.sys.mjs",
 ]
