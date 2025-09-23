@@ -1,8 +1,3 @@
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/
- *
- * Performance tests for the RustLogins mirror
- */
 ("use strict");
 
 /* exported perfMetadata */
